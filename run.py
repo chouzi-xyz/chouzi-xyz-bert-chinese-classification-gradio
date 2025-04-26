@@ -11,10 +11,10 @@ parser = argparse.ArgumentParser(description='Chinese Text Classification')
 parser.add_argument('--model', type=str, required=True, help='choose a model: Bert, ERNIE')
 args = parser.parse_args()
 
+model, config = None, None
 
 if __name__ == '__main__':
     dataset = 'THUCNews'  # 数据集
-
     model_name = args.model  # bert
     x = import_module('models.' + model_name)
     config = x.Config(dataset)
@@ -35,3 +35,17 @@ if __name__ == '__main__':
     # train
     model = x.Model(config).to(config.device)
     train(config, model, train_iter, dev_iter, test_iter)
+
+    # 更健壮的修改方式：在 run.py 中添加初始化函数
+    # run.py 中新增：
+
+
+def init_model():
+    global model, config  # 声明为全局变量
+    if model is None:
+        # 执行原有初始化逻辑
+        dataset = 'THUCNews'
+        x = import_module('models.' + args.model)
+        config = x.Config(dataset)
+        model = x.Model(config).to(config.device)
+    return model, config

@@ -7,6 +7,7 @@ from sklearn import metrics
 import time
 from utils import get_time_dif
 from pytorch_pretrained.optimization import BertAdam
+import os
 
 
 # 权重初始化，默认xavier
@@ -62,8 +63,9 @@ def train(config, model, train_iter, dev_iter, test_iter):
                 dev_acc, dev_loss = evaluate(config, model, dev_iter)
                 if dev_loss < dev_best_loss:
                     dev_best_loss = dev_loss
+                    os.makedirs(os.path.dirname(config.save_path), exist_ok=True)  # 新增这行
                     torch.save(model.state_dict(), config.save_path)
-                    improve = '*'
+                    improve = '*'# 更新模型
                     last_improve = total_batch
                 else:
                     improve = ''
@@ -119,3 +121,43 @@ def evaluate(config, model, data_iter, test=False):
         confusion = metrics.confusion_matrix(labels_all, predict_all)
         return acc, loss_total / len(data_iter), report, confusion
     return acc, loss_total / len(data_iter)
+
+
+def predict(config, model, text):
+    # 文本预处理
+    token = config.tokenizer.tokenize(text)
+    token = ['[CLS]'] + token
+    seq_len = len(token)
+    mask = []
+    token_ids = config.tokenizer.convert_tokens_to_ids(token)
+
+    # 填充/截断（与训练时一致）
+    pad_size = config.pad_size
+    if len(token) < pad_size:
+        mask = [1] * len(token_ids) + [0] * (pad_size - len(token))
+        token_ids += [0] * (pad_size - len(token))
+    else:
+        mask = [1] * pad_size
+        token_ids = token_ids[:pad_size]
+        seq_len = pad_size
+
+    # 转换为Tensor
+    inputs = (
+        torch.LongTensor([token_ids]),
+        torch.LongTensor([seq_len]),
+        torch.LongTensor([mask])
+    )
+    inputs = [t.to(config.device) for t in inputs]
+
+    # 预测
+    model.eval()
+    with torch.no_grad():
+        outputs = model(inputs)
+        probabilities = torch.softmax(outputs, dim=1).cpu().numpy()[0]  # 获取概率数组
+    return {
+        "pred_label": config.class_list[probabilities.argmax()],  # 预测标签
+        "probabilities": {
+            en_label: round(float(prob), 4)  # 保留4位小数
+            for en_label, prob in zip(config.class_list, probabilities)
+        }
+    }
